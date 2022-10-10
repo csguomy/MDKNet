@@ -35,7 +35,7 @@ The tree of the folder should be:
 Download the pretrained hrnet model `HRNet-W40-C` from the link `https://github.com/HRNet/HRNet-Image-Classification` and put it directly in the root path of the repository.
 
 # Test
-Download the pretrained model via Link：https://pan.baidu.com/s/1J9mzjo5l6z3TDr0bPYi-kw, Extract Password：sqbm
+Download the pretrained model(mdknet.pth) via Link：https://pan.baidu.com/s/1J9mzjo5l6z3TDr0bPYi-kw, Extract Password：sqbm
 or
 
 ```bash
