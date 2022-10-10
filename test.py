@@ -95,7 +95,3 @@ print('SHA_MSE: ', pred_mse[0])
 print('SHB_MSE: ', pred_mse[1])
 print('QNRF_MSE: ', pred_mse[2])
 print('NWPU_MSE: ', pred_mse[3])
-
-#sys.stdout.write('loss = {}, eval_mae = {}, eval_rmse = {}, time cost eval = {}s\n'
-#                .format(validate_loss, validate_MAE, validate_RMSE, time_cost))
-#sys.stdout.flush()
