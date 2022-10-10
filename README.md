@@ -5,7 +5,7 @@ Virtual Classification: Modulating Domain-Specific Knowledge for Multi-domain Cr
 **Testing code of MDKNet is available.**
 
 # Datasets Preparation
-Download the datasets `ShanghaiTech A`, `ShanghaiTech B`, `UCF-QNRF` and `NWPU`
+Download the datasets `ShanghaiTech A`, `ShanghaiTech B`, `UCF-QNRF` and `NWPU`. 
 Then generate the density maps via `gen_den_map.py`.
 After that, create a folder named `JSTL_large_4_dataset`, and directly copy all the processed data in `JSTL_large_4_dataset`.
 
