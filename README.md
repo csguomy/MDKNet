@@ -46,7 +46,7 @@ bash download_models.sh
 And put the model into folder `./output/MSDNet_models/`
 
 ```bash
-python test.sh
+bash test.sh
 ```
 
 # Citation
