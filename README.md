@@ -36,6 +36,7 @@ Download the pretrained hrnet model `HRNet-W40-C` from the link `https://github.
 
 # Test
 Download the pretrained model(mdknet.pth) via Link：https://pan.baidu.com/s/1J9mzjo5l6z3TDr0bPYi-kw, Extract Password：sqbm
+
 or
 
 ```bash
