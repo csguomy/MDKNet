@@ -43,7 +43,7 @@ or
 bash download_models.sh
 ```
 
-And put the model into folder `./output/MSDNet_models/`
+And put the model into folder `./output/MDKNet_models/`
 
 ```bash
 bash test.sh
