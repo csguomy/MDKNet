@@ -48,12 +48,15 @@ And put the model into folder `./output/MDKNet_models/`
 ```bash
 bash test.sh
 ```
-
 # Citation
 If you find our work useful or our work gives you any insights, please cite:
 ```
-@article{MingyueGuoVirtualCM,
-	author = {Mingyue Guo,Binghui Chen,Zhaoyi Yan,Yaowei Wang,Qixiang Ye},
-	title = {Virtual Classification: Modulating Domain-Specific Knowledge for Multi-domain Crowd Counting}
-}
+@ARTICLE{MingyueGuoVirtualCM,
+  author={Guo, Mingyue and Chen, Binghui and Yan, Zhaoyi and Wang, Yaowei and Ye, Qixiang},
+  journal={IEEE Transactions on Neural Networks and Learning Systems}, 
+  title={Virtual Classification: Modulating Domain-Specific Knowledge for Multidomain Crowd Counting}, 
+  year={2024},
+  pages={1-15},
+  keywords={Training;Adaptation models;Feature extraction;Modulation;Data models;Knowledge engineering;Pipelines;Crowd counting;domain-guided virtual classifier (DVC);instance-specific batch normalization (IsBN);multidomain learning},
+  doi={10.1109/TNNLS.2024.3350363}}
 ```
