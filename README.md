@@ -48,6 +48,12 @@ And put the model into folder `./output/MDKNet_models/`
 ```bash
 bash test.sh
 ```
+
+# Train
+
+```bash
+bash train.sh
+```
 # Citation
 If you find our work useful or our work gives you any insights, please cite:
 ```
