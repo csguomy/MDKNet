@@ -96,6 +96,205 @@ class DatasetConstructor(data.Dataset):
             return resize_height, resize_width
 
 
+class TrainDatasetConstructor(DatasetConstructor):
+    def __init__(self,
+                 train_num,
+                 data_dir_path,
+                 gt_dir_path,
+                 mode='crop',
+                 dataset_name="JSTL",
+                 device=None,
+                 is_random_hsi=False,
+                 is_flip=False,
+                 is_mask=False,
+                 is_throw0 = 0,
+                 fine_size = 400,
+                 opt=None,
+                 ):
+        super(TrainDatasetConstructor, self).__init__()
+        
+        self.train_num = train_num
+        self.opt = opt
+        self.imgs = []
+        self.fine_size = fine_size
+        self.permulation = np.random.permutation(self.train_num)
+        self.data_root, self.gt_root = data_dir_path, gt_dir_path
+        self.mode = mode
+        self.device = device
+        self.is_random_hsi = is_random_hsi
+        self.is_flip = is_flip
+        self.is_mask = is_mask
+        self.dataset_name = dataset_name
+        self.kernel = torch.FloatTensor(torch.ones(1, 1, 2, 2))
+        self.is_throw0 = is_throw0
+        self.online_map = True if self.opt.rand_scale_rate > 0.0 else False
+                
+        # they are mapped as pairs
+        imgs = sorted(glob.glob(self.data_root+'/*'))
+        dens = sorted(glob.glob(self.gt_root+'/*'))
+        self.train_num = len(imgs)
+        # the whole gt label for all training images
+        #self.gt_label_all = torch.zeros(self.train_num).long()
+        self.gt_label_all = []
+        print('Constructing training dataset...')
+        
+        for i in range(self.train_num):
+            img_tmp = imgs[i]
+
+#             # for 3 datasets
+#             if os.path.basename(img_tmp).find('SHA') != -1:
+#                 continue            
+
+            den = os.path.join(self.gt_root, os.path.basename(img_tmp)[:-4] + ".npy")
+            assert den in dens, "Automatically generating density map paths corrputed!"
+            # add cls id to each img
+
+            class_id = 0
+            if os.path.basename(imgs[i]).find('SHA') != -1:
+                class_id = 0
+            elif os.path.basename(imgs[i]).find('SHB') != -1:
+                class_id = 1
+            elif os.path.basename(imgs[i]).find('QNRF') != -1:
+                class_id = 2
+            elif os.path.basename(imgs[i]).find('NWPU') != -1:
+                class_id = 3
+            else:
+                assert 1==2
+
+            self.imgs.append([imgs[i], den, i, class_id]) # also add additional index
+            #self.gt_label_all[i] = class_id
+            # for 3 datasets
+            self.gt_label_all.append(class_id)
+        # for 3 datasets
+        self.gt_label_all = torch.tensor(self.gt_label_all).long()
+        
+        # for 3 datasets
+        self.train_num= len(self.imgs)
+
+    def __getitem__(self, index):
+        if self.mode == 'crop':
+            img_path, gt_map_path, cur_idx, class_id = self.imgs[index]
+
+            # single gbn method
+            # class_id = cur_idx % sef.opt.cls_num
+
+            class_id = torch.tensor(class_id).long()
+            img = Image.open(img_path).convert("RGB")
+            cur_dataset = super(TrainDatasetConstructor, self).get_cur_dataset(img_path)
+            img, ratio_h, ratio_w = super(TrainDatasetConstructor, self).resize(img, cur_dataset, self.opt.rand_scale_rate)
+            width, height = img.size
+            gt_map = None
+            if self.online_map:
+                mat_name = img_path.replace('images', 'ground_truth')[:-4] + ".mat"
+                points = scio.loadmat(mat_name)['annPoints']
+                gt_map = utils.get_density_map_gaussian(height, width, ratio_h, ratio_w,  points, fixed_value=4)
+                gt_map = Image.fromarray(np.squeeze(np.reshape(gt_map, [height, width])))  # transpose into w, h
+            else:
+                gt_map = Image.fromarray(np.squeeze(np.load(gt_map_path).astype(np.float32)))
+
+            if self.is_random_hsi:
+                
+                #---------------------dataAug-------------------------#
+                if os.path.basename(img_path).find('SHB') != -1:
+                    img = transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)(img)
+                else:                
+                    img = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)(img)
+                #------------------------------------------------------#
+                
+            if self.is_flip:
+                flip_random = random.random()
+                if flip_random > 0.5:
+                    img = F.hflip(img)
+                    gt_map = F.hflip(gt_map)
+
+            img, gt_map = transforms.ToTensor()(np.array(img)), transforms.ToTensor()(np.array(gt_map))
+                
+            img_shape = img.shape  # C, H, W
+            gt_map_shape = gt_map.shape
+            # also scale gt_map
+            if img_shape[1] != gt_map_shape[1] or img_shape[2] != gt_map_shape[2]:
+                print('img shape is not same as gt_map: ', img_shape, gt_map_shape)
+                assert 1==2
+                #gt_map = functional.interpolate(gt_map.unsqueeze(0), (img_shape[1], img_shape[2]), mode='bilinear').squeeze(0)
+            
+            
+            #---------------------dataAug-------------------------#
+            if self.is_mask and os.path.basename(img_path).find('QNRF') == -1:
+                
+                res = self.opt.res
+                density = self.opt.density
+                if os.path.basename(img_path).find('SHA') != -1:
+                    density = 0.8
+                elif os.path.basename(img_path).find('SHB') != -1:
+                    density = 0.75
+                else:
+                    density = 0.9
+                    
+                #print('1 den size:', gt_map_shape)
+                mask = torch.zeros(img_shape[1], img_shape[2])
+                mask = utils.wrapper_gmask(res, density, img_shape[1], img_shape[2])
+                mask = mask.squeeze().repeat(1,1,1)
+                #print('2 mask size: ', mask.shape)
+                gt_map = gt_map*mask
+                #print('3 mask_den size:', gt_map.shape)
+                
+                #print('4 img size:', img_shape)
+                mask = mask.squeeze().repeat(3,1,1)
+                #print('5 mask size: ', mask.shape)
+                img = img*mask
+                #print('6 mask_img size:', img.shape)
+                
+
+            # throw the crop with 0 heads  
+            temp_img = img
+            temp_gt_map = gt_map
+            
+            throw_times = self.is_throw0
+            
+            if os.path.basename(img_path).find('SHA') != -1:
+                throw_times = 5
+                
+            elif os.path.basename(img_path).find('SHB') != -1:
+                throw_times = 2
+                
+            elif os.path.basename(img_path).find('QNRF') != -1:
+                throw_times = 2
+                
+            else:
+                throw_times = 3
+             
+            while throw_times >= 0:
+                
+                rh, rw = random.randint(0, img_shape[1] - self.fine_size), random.randint(0, img_shape[2] - self.fine_size)
+                p_h, p_w = self.fine_size, self.fine_size
+                temp_img = img[:, rh:rh + p_h, rw:rw + p_w]
+                temp_gt_map = gt_map[:, rh:rh + p_h, rw:rw + p_w]
+                
+                if temp_gt_map.sum() >= 1:
+                #if temp_gt_map.sum() >= 0:
+                    break
+                throw_times -= 1
+            
+            img = temp_img
+            gt_map = temp_gt_map            
+            #------------------------------------------------------#
+
+            '''
+            rh, rw = random.randint(0, img_shape[1] - self.fine_size), random.randint(0, img_shape[2] - self.fine_size)
+            p_h, p_w = self.fine_size, self.fine_size
+            img = img[:, rh:rh + p_h, rw:rw + p_w]
+            gt_map = gt_map[:, rh:rh + p_h, rw:rw + p_w]            
+            '''
+
+            img = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))(img)
+            gt_map = functional.conv2d(gt_map.view(1, 1, self.fine_size, self.fine_size), self.kernel, bias=None, stride=2, padding=0)
+            return img.view(3, self.fine_size, self.fine_size), gt_map.view(1, self.fine_size//2, self.fine_size//2), class_id, os.path.basename(img_path), torch.tensor(cur_idx)
+
+    def __len__(self):
+        return self.train_num
+
+
+#
 # For evalation, we also return img_path.
 # This help get the paths of '.mat' recording the real num(not from density map).
 #
