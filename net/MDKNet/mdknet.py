@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch._utils
 import torch.nn.functional as F
 
+
 BN_MOMENTUM = 0.01 # 0.01 for seg
 
 
@@ -261,8 +262,8 @@ class HighResolutionNet(nn.Module):
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64, momentum=BN_MOMENTUM)
-      #  self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1,
-      #                         bias=False)
+#         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1,
+#                               bias=False)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1,
                                bias=False)
         self.bn2 = nn.BatchNorm2d(64, momentum=BN_MOMENTUM)
@@ -329,7 +330,8 @@ class HighResolutionNet(nn.Module):
             self.stage4_cfg, num_channels, multi_scale_output=True)
 
         last_inp_channels = np.int(np.sum(pre_stage_channels)) + 256
-
+        
+        
         self.redc_layer = nn.Sequential(
             nn.Conv2d(
                   in_channels=last_inp_channels,
@@ -369,6 +371,38 @@ class HighResolutionNet(nn.Module):
         self.pred_softmax = nn.Sequential(
             nn.Linear(128, self.out_cls_num)
 
+        )
+
+        self.pred_attn = nn.Sequential(
+            nn.Linear(128, 512),
+            nn.BatchNorm1d(512, momentum=BN_MOMENTUM),
+            nn.Sigmoid()
+        )
+
+
+        self.last_layer = nn.Sequential(
+            nn.Conv2d(
+                in_channels=128,
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1),
+            nn.BatchNorm2d(64, momentum=BN_MOMENTUM),
+            nn.ReLU(True),
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=1),
+            nn.BatchNorm2d(32, momentum=BN_MOMENTUM),
+            nn.ReLU(True),
+            nn.Conv2d(
+                in_channels=32,
+                out_channels=1,
+                kernel_size=1,
+                stride=1,
+                padding=0),
         )
 
         self.pred_attn = nn.Sequential(
@@ -513,7 +547,6 @@ class HighResolutionNet(nn.Module):
             else:
                 x_list.append(y_list[i])
         y_list = self.stage3(x_list)
-       # x = self.stage3(x_list)
 
         x_list = []
         for i in range(self.stage4_cfg['NUM_BRANCHES']):
@@ -529,61 +562,56 @@ class HighResolutionNet(nn.Module):
         x1 = F.interpolate(x[1], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
         x2 = F.interpolate(x[2], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
         x3 = F.interpolate(x[3], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
-
-        #x = torch.cat([x[0], x1, x2, x_head_1], 1)
-        #x = torch.cat([x[0], x1, x2, x3], 1)
         x = torch.cat([x[0], x1, x2, x3, x_head_1], 1)
+        # above is backbone
 
-        # first, reduce the channel down to 128
         x = self.redc_layer(x)
 
         bz = x.size(0)
         pred_base_feat = self.pred_base(x)
         pred_attn_feat = self.pred_attn(pred_base_feat).view(bz, -1, 1, 1)
-        logits = self.pred_softmax(pred_base_feat)
 
         pred_attn_list = torch.chunk(pred_attn_feat, 4, dim=1)
 
         aspp_out = []
+        # Using Aspp concat, and relu inside
         for k, v in enumerate(self.aspp):
             if k%2 == 0:
                 aspp_out.append(self.aspp[k+1](v(x)))
             else:
                 continue
-
+        
         # implementation for DVC
         for i in range(4):
             # replace  scale parameters for IsBN by pred_attn_list[i]
             # which predict by domain-guided BN parameterize
             x = x + F.relu_(aspp_out[i] * 0.25) * pred_attn_list[i]
-
+            
         x = self.last_layer(x)
         x = F.relu_(x)
+        
+        # implementation for "Reslt: Residual learning for long-tailed recognition"
+        head_fs, tail_fs = self.BNH(pred_base_feat), self.BNT(pred_base_feat)
+        fs = torch.cat((head_fs, tail_fs), dim=0)
 
-        softmax_feat = F.log_softmax(logits, dim=1) # for cross_entropy loss
-        soft_label = F.softmax(logits, dim=1) # just used for conf accumlation
+        logits = self.pred_softmax(fs.view(fs.size(0), -1))
 
-        return x, softmax_feat, soft_label
+        # mention, in fact out_b is excatly equal to batchsize on one gpu
+        out_b = logits.size(0) // 2
+
+        soft_label = F.softmax(logits[:out_b, :] + logits[out_b:, :], dim=1).detach()
+
+        if tsne:
+            return x, logits[:out_b, :], logits[out_b:, :], soft_label, pred_attn_feat.view(-1, 512)
+
+        else:
+            return x, logits[:out_b, :], logits[out_b:, :], soft_label
 
     def init_weights(self, pretrained='',):
         print('=> init weights from normal distribution')
-        '''
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.normal_(m.weight, std=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-        '''
 
-        # implimentation for DVC
         for name, m in self.named_modules():
-            # print(name, m)
             if isinstance(m, nn.Conv2d):
-                # the scale parameters will be predicted 
-                # by domain-guided BN parameterize
                 nn.init.normal_(m.weight, std=0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -595,7 +623,7 @@ class HighResolutionNet(nn.Module):
                 if name.find('aspp') != -1:
                     print(name, m)
                     m.weight.requires_grad = False
-
+                    
         if os.path.isfile(pretrained):
             pretrained_dict = torch.load(pretrained)
             print('=> loading pretrained model {}'.format(pretrained))
@@ -611,7 +639,6 @@ class HighResolutionNet(nn.Module):
             assert 1==2
 
 
-
 def aspp(aspp_num=4, aspp_stride=2, in_channel=512, use_bn=True):
     aspp_list = []
     for i in range(aspp_num):
@@ -623,4 +650,3 @@ def aspp(aspp_num=4, aspp_stride=2, in_channel=512, use_bn=True):
             aspp_list.append(nn.BatchNorm2d(in_channel))
 
     return aspp_list
-
