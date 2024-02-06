@@ -585,6 +585,7 @@ class HighResolutionNet(nn.Module):
         for i in range(4):
             # replace  scale parameters for IsBN by pred_attn_list[i]
             # which predict by domain-guided BN parameterize
+            # same as the function of adaptive alpha and shift in IsBN
             x = x + F.relu_(aspp_out[i] * 0.25) * pred_attn_list[i]
             
         x = self.last_layer(x)
