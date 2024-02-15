@@ -75,7 +75,7 @@ class Estimator(object):
                 eval_patchs_shape_lst = []
                 for i in range(bz):
                     #print(i)
-                    tmp, _, _ = eval("net_lst[i](eval_patchs_lst[i])")
+                    tmp, _, _, _ = eval("net_lst[i](eval_patchs_lst[i])")
                     eval_prediction_lst.append(tmp)
                     eval_patchs_shape_lst.append(tmp.shape)
                 
